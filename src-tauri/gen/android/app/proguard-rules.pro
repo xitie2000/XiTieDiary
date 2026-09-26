@@ -1,4 +1,7 @@
-# Add project specific ProGuard rules here.
+# rustls-platform-verifier 的 Kotlin 组件通过 JNI 反射调用（Rust 侧），
+# R8 看不到引用会将其裁剪掉，必须显式 keep
+-keep class org.rustls.platformverifier.** { *; }
+
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #
