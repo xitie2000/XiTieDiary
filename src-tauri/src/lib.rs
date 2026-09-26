@@ -44,3 +44,38 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+/// Android：rustls-platform-verifier 需要在任何 TLS 校验发生前完成 JNI 初始化，
+/// 否则首次 HTTPS 请求会 abort（"Expect rustls-platform-verifier to be initialized"）。
+/// 在库加载（System.loadLibrary）时通过 JNI_OnLoad 挂接。
+#[cfg(target_os = "android")]
+mod android_init {
+    use jni::sys::{jint, JNI_VERSION_1_6};
+
+    #[no_mangle]
+    pub extern "system" fn JNI_OnLoad(
+        vm: *mut jni::sys::JavaVM,
+        _reserved: *mut std::ffi::c_void,
+    ) -> jint {
+        if !vm.is_null() {
+            let vm = unsafe { jni::JavaVM::from_raw(vm) };
+            let _ = vm.attach_current_thread_for_scope(
+                |env| -> Result<(), jni::errors::Error> {
+                    let class =
+                        env.find_class(jni::jni_str!("android/app/ActivityThread"))?;
+                    let app = env
+                        .call_static_method(
+                            class,
+                            jni::jni_str!("currentApplication"),
+                            jni::jni_sig!("()Landroid/app/Application;"),
+                            &[],
+                        )?
+                        .l()?;
+                    let _ = rustls_platform_verifier::android::init_with_env(env, app);
+                    Ok(())
+                },
+            );
+        }
+        JNI_VERSION_1_6
+    }
+}
