@@ -42,6 +42,32 @@ main {
   flex: 1;
 }
 
+.sync-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sync-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 14px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sync-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .new-btn {
   border: none;
   border-radius: 18px;

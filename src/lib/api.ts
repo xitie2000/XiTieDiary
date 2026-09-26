@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppErrorDto, ConfigStatus, Entry, MediaMeta, MediaWithUrl } from './types';
+import type { AppErrorDto, ConfigStatus, Entry, MediaMeta, MediaWithUrl, SyncReport } from './types';
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -55,4 +55,8 @@ export function getConfigStatus(): Promise<ConfigStatus> {
 
 export function cleanupEmptyDrafts(): Promise<number> {
   return call<number>('cleanup_empty_drafts');
+}
+
+export function syncNow(): Promise<SyncReport> {
+  return call<SyncReport>('sync_now');
 }

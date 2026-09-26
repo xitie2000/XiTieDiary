@@ -1,15 +1,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import { store } from '$lib/stores.svelte';
-  import { createDraftEntry } from '$lib/api';
+  import { createDraftEntry, syncNow } from '$lib/api';
   import EntryList from '$lib/components/EntryList.svelte';
   import EntryEditor from '$lib/components/EntryEditor.svelte';
+  import SyncBar from '$lib/components/SyncBar.svelte';
 
   let view = $state<{ page: 'list' } | { page: 'editor'; id: string }>({ page: 'list' });
   let creating = $state(false);
 
-  onMount(() => {
+  onMount(async () => {
     store.loadEntries();
+    const unlisten = await listen<{ status: string; message?: string }>(
+      'sync://status',
+      (e) => {
+        const { status, message } = e.payload;
+        if (status === 'syncing' || status === 'ok' || status === 'error') {
+          store.syncStatus = status;
+          if (status === 'ok') {
+            store.loadEntries();
+          }
+          if (status === 'error' && message) {
+            console.error(`[sync] ${message}`);
+          }
+        }
+      }
+    );
+    syncNow().catch(() => {});
+    return unlisten;
   });
 
   function todayLocal(): string {
@@ -38,7 +57,7 @@
 
 <main>
   <header class="topbar">
-    <span class="sync-slot" data-testid="sync-slot"></span>
+    <span class="sync-slot" data-testid="sync-slot"><SyncBar /></span>
     <button class="new-btn" data-testid="new-btn" onclick={newEntry} disabled={creating}>
       ＋ 新写一篇
     </button>

@@ -12,7 +12,7 @@ use std::path::Path;
 
 const LOCK_TTL_MS: i64 = 5 * 60 * 1000;
 
-#[derive(Debug, Default, Serialize, PartialEq)]
+#[derive(Debug, Default, Serialize, Clone, PartialEq)]
 pub struct SyncReport {
     pub downloaded_entries: u32,
     pub uploaded_entries: u32,

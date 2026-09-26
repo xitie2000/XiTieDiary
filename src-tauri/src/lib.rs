@@ -31,7 +31,8 @@ pub fn run() {
             commands::list_media,
             commands::media_counts,
             commands::get_config_status,
-            commands::cleanup_empty_drafts
+            commands::cleanup_empty_drafts,
+            commands::sync_now
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

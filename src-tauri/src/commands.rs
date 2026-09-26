@@ -2,9 +2,11 @@ use crate::config::load_config;
 use crate::db::{current_ms, Db};
 use crate::error::{AppError, AppErrorDto};
 use crate::images::compress_to_jpeg;
+use crate::sync::remote::Remote;
+use crate::sync::{run_sync, SyncReport};
 use crate::types::{Entry, MediaMeta};
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Serialize)]
 pub struct ConfigStatus {
@@ -18,6 +20,80 @@ pub struct MediaWithUrl {
     #[serde(flatten)]
     pub meta: MediaMeta,
     pub url_path: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SyncStatusEvent {
+    pub status: String,
+    pub report: Option<SyncReport>,
+    pub message: Option<String>,
+}
+
+fn device_id(data_dir: &std::path::Path) -> Result<String, AppError> {
+    let path = data_dir.join("device-id");
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        let id = s.trim();
+        if !id.is_empty() {
+            return Ok(id.to_string());
+        }
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    std::fs::write(&path, &id)?;
+    Ok(id)
+}
+
+pub async fn do_sync_core<E>(
+    data_dir: &std::path::Path,
+    db: &Db,
+    emit: E,
+) -> Result<SyncReport, AppError>
+where
+    E: Fn(SyncStatusEvent),
+{
+    emit(SyncStatusEvent {
+        status: "syncing".into(),
+        report: None,
+        message: None,
+    });
+
+    match sync_inner(data_dir, db).await {
+        Ok(report) => {
+            emit(SyncStatusEvent {
+                status: "ok".into(),
+                report: Some(report.clone()),
+                message: None,
+            });
+            Ok(report)
+        }
+        Err(e) => {
+            emit(SyncStatusEvent {
+                status: "error".into(),
+                report: None,
+                message: Some(e.to_string()),
+            });
+            Err(e)
+        }
+    }
+}
+
+async fn sync_inner(data_dir: &std::path::Path, db: &Db) -> Result<SyncReport, AppError> {
+    let cfg = load_config(None, Some(data_dir))?;
+    let remote = Remote::new(&cfg, data_dir)?;
+    let media_dir = data_dir.join("media");
+    std::fs::create_dir_all(&media_dir)?;
+    let device = device_id(data_dir)?;
+    run_sync(db, &remote, &media_dir, &device).await
+}
+
+#[tauri::command]
+pub async fn sync_now(app: AppHandle, db: State<'_, Db>) -> Result<SyncReport, AppErrorDto> {
+    let data_dir = app_data_dir(&app)?;
+    let handle = app.clone();
+    do_sync_core(&data_dir, &db, move |ev| {
+        let _ = handle.emit("sync://status", ev);
+    })
+    .await
+    .map_err(AppErrorDto::from)
 }
 
 fn dto(e: impl Into<AppError>) -> AppErrorDto {
@@ -157,4 +233,48 @@ pub fn get_config_status(app: AppHandle) -> Result<ConfigStatus, AppErrorDto> {
 #[tauri::command]
 pub fn cleanup_empty_drafts(db: State<Db>) -> Result<u32, AppErrorDto> {
     db.cleanup_empty_drafts().map_err(dto)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[tokio::test]
+    async fn sync_error_emits_event() {
+        let _g = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("XITIEDIARY_CONFIG");
+
+        let dir = std::env::temp_dir().join(format!("xitiediary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = dir.join("local.json");
+        std::fs::write(
+            &cfg_path,
+            r#"{"provider":"ftp","bucket":"b","access_key_id":"ak","access_key_secret":"supersecret123"}"#,
+        )
+        .unwrap();
+        std::env::set_var("XITIEDIARY_CONFIG", &cfg_path);
+
+        let db = Db::open_in_memory().unwrap();
+        let events: Arc<Mutex<Vec<SyncStatusEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let data_dir = dir.clone();
+
+        let result = do_sync_core(&data_dir, &db, move |ev| {
+            sink.lock().unwrap().push(ev);
+        })
+        .await;
+
+        std::env::remove_var("XITIEDIARY_CONFIG");
+
+        assert!(result.is_err());
+        let events = events.lock().unwrap();
+        assert!(!events.is_empty(), "no events emitted");
+        let last = events.last().unwrap();
+        assert_eq!(last.status, "error");
+        let all = format!("{events:?}");
+        assert!(!all.contains("supersecret123"), "leaked secret: {all}");
+    }
 }

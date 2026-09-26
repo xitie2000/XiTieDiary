@@ -30,3 +30,11 @@ export interface AppErrorDto {
   code: string;
   message: string;
 }
+
+export interface SyncReport {
+  downloaded_entries: number;
+  uploaded_entries: number;
+  downloaded_media: number;
+  uploaded_media: number;
+  conflicts: number;
+}
