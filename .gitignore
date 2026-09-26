@@ -1,0 +1,67 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ / Android Studio related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code related
+.vscode/
+!.vscode/settings.json
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android local config (may contain API keys)
+**/local.properties
+**/key.properties
+
+# iOS/macOS signing
+**/ios/Flutter/flutter_export_environment.sh
+**/*.mobileprovision
+
+# ===== Secrets: NEVER commit =====
+# Local dev config injected via --dart-define-from-file
+local.json
+*.local.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Cloud credentials
+*.aksk
+*.pem
+*.key
