@@ -163,6 +163,29 @@ pub fn delete_entry(db: State<Db>, id: String) -> Result<(), AppErrorDto> {
     Ok(())
 }
 
+fn write_media(
+    data_dir: &std::path::Path,
+    db: &Db,
+    entry_id: &str,
+    raw: Vec<u8>,
+) -> Result<MediaMeta, AppErrorDto> {
+    let (bytes, _w, _h) = compress_to_jpeg(&raw, 1920, 80).map_err(dto)?;
+    let media_dir = data_dir.join("media");
+    std::fs::create_dir_all(&media_dir).map_err(dto)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    std::fs::write(media_dir.join(format!("{id}.jpg")), &bytes).map_err(dto)?;
+    let m = MediaMeta {
+        id,
+        entry_id: entry_id.to_string(),
+        mime: "image/jpeg".into(),
+        size: bytes.len() as i64,
+        updated_at: current_ms(),
+        deleted: false,
+    };
+    db.insert_media(&m).map_err(dto)?;
+    Ok(m)
+}
+
 #[tauri::command]
 pub fn insert_media(
     app: AppHandle,
@@ -171,22 +194,23 @@ pub fn insert_media(
     path: String,
 ) -> Result<MediaMeta, AppErrorDto> {
     let raw = std::fs::read(&path).map_err(dto)?;
-    let (bytes, _w, _h) = compress_to_jpeg(&raw, 1920, 80).map_err(dto)?;
     let data_dir = app_data_dir(&app)?;
-    let media_dir = data_dir.join("media");
-    std::fs::create_dir_all(&media_dir).map_err(dto)?;
-    let id = uuid::Uuid::new_v4().to_string();
-    std::fs::write(media_dir.join(format!("{id}.jpg")), &bytes).map_err(dto)?;
-    let m = MediaMeta {
-        id,
-        entry_id,
-        mime: "image/jpeg".into(),
-        size: bytes.len() as i64,
-        updated_at: current_ms(),
-        deleted: false,
-    };
-    db.insert_media(&m).map_err(dto)?;
-    Ok(m)
+    write_media(&data_dir, &db, &entry_id, raw)
+}
+
+#[tauri::command]
+pub fn insert_media_bytes(
+    app: AppHandle,
+    db: State<Db>,
+    entry_id: String,
+    data: String,
+) -> Result<MediaMeta, AppErrorDto> {
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| dto(AppError::Sync(format!("图片数据解码失败: {e}"))))?;
+    let data_dir = app_data_dir(&app)?;
+    write_media(&data_dir, &db, &entry_id, raw)
 }
 
 #[tauri::command]
@@ -241,6 +265,53 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_png(width: u32, height: u32) -> Vec<u8> {
+        let img = image::RgbImage::from_fn(width, height, |x, y| {
+            image::Rgb([(x % 251) as u8, (y % 241) as u8, ((x + y) % 233) as u8])
+        });
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn bytes_pipeline_matches_file_pipeline() {
+        let dir = std::env::temp_dir().join(format!("xitiediary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        db.upsert_entry(&Entry {
+            id: "e1".into(),
+            date: "2026-09-26".into(),
+            content: "x".into(),
+            created_at: 1,
+            updated_at: 1,
+            deleted: false,
+        })
+        .unwrap();
+
+        let png = test_png(300, 200);
+
+        // 桌面路径：insert_media 读文件后调用 write_media
+        let m1 = write_media(&dir, &db, "e1", png.clone()).unwrap();
+
+        // Android 路径：base64 传输后解码，调用同一个 write_media
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(b64.as_bytes())
+            .unwrap();
+        let m2 = write_media(&dir, &db, "e1", decoded).unwrap();
+
+        assert_eq!(m1.mime, m2.mime);
+        assert_eq!(m1.size, m2.size);
+
+        let f1 = std::fs::read(dir.join("media").join(format!("{}.jpg", m1.id))).unwrap();
+        let f2 = std::fs::read(dir.join("media").join(format!("{}.jpg", m2.id))).unwrap();
+        assert_eq!(f1, f2, "两条管线应产出逐字节一致的 JPEG");
+    }
 
     #[tokio::test]
     async fn sync_error_emits_event() {

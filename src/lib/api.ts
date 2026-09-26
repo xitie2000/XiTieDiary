@@ -37,6 +37,10 @@ export function insertMedia(entryId: string, path: string): Promise<MediaMeta> {
   return call<MediaMeta>('insert_media', { entryId: entryId, path });
 }
 
+export function insertMediaBytes(entryId: string, data: string): Promise<MediaMeta> {
+  return call<MediaMeta>('insert_media_bytes', { entryId, data });
+}
+
 export function deleteMedia(id: string): Promise<void> {
   return call<void>('delete_media', { id });
 }

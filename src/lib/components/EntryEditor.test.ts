@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   cleanupEmptyDrafts: vi.fn(),
   deleteEntry: vi.fn(),
   insertMedia: vi.fn(),
+  insertMediaBytes: vi.fn(),
   listMedia: vi.fn(),
   deleteMedia: vi.fn(),
 }));
@@ -145,6 +146,30 @@ describe('EntryEditor', () => {
     await fireEvent.click(screen.getByTestId('media-remove-btn'));
     await flush();
     expect(mocks.deleteMedia).toHaveBeenCalledWith('m1');
+    expect(mocks.listMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it('file_input_routes_to_insert_media_bytes', async () => {
+    mocks.getEntry.mockResolvedValue(mockEntry({ content: 'x' }));
+    mocks.listMedia.mockResolvedValue([]);
+    mocks.insertMediaBytes.mockResolvedValue(mediaItem());
+    render(EntryEditor, { props: { entryId: 'e1', onclose: vi.fn() } });
+    await flush();
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'a.png', { type: 'image/png' });
+    const input = screen.getByTestId('media-file-input');
+    Object.defineProperty(input, 'files', { value: [file] });
+    await fireEvent.change(input);
+    await flush();
+    await new Promise((r) => setTimeout(r, 10));
+    await flush();
+
+    expect(mocks.insertMediaBytes).toHaveBeenCalledTimes(1);
+    const [entryId, b64] = mocks.insertMediaBytes.mock.calls[0];
+    expect(entryId).toBe('e1');
+    expect(typeof b64).toBe('string');
+    expect(b64.length).toBeGreaterThan(0);
+    expect(mocks.insertMedia).not.toHaveBeenCalled();
     expect(mocks.listMedia).toHaveBeenCalledTimes(2);
   });
 });

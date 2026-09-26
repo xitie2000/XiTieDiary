@@ -8,6 +8,7 @@
     cleanupEmptyDrafts,
     deleteEntry,
     insertMedia,
+    insertMediaBytes,
     listMedia,
     deleteMedia,
   } from '$lib/api';
@@ -26,6 +27,9 @@
   let media = $state<MediaWithUrl[]>([]);
   let dirty = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let fileInput: HTMLInputElement | undefined = $state();
+
+  const isAndroid = /android/i.test(navigator.userAgent);
 
   onMount(async () => {
     entry = await getEntry(entryId);
@@ -71,6 +75,10 @@
   }
 
   async function addMedia() {
+    if (isAndroid) {
+      fileInput?.click();
+      return;
+    }
     const picked = await openFileDialog({
       multiple: true,
       filters: [
@@ -81,6 +89,30 @@
     if (paths.length === 0) return;
     for (const p of paths) {
       await insertMedia(entryId, p);
+    }
+    await loadMedia();
+  }
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result);
+        resolve(result.slice(result.indexOf(',') + 1));
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function onFilesPicked(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = input.files ? Array.from(input.files) : [];
+    input.value = '';
+    if (files.length === 0) return;
+    for (const f of files) {
+      const b64 = await fileToBase64(f);
+      await insertMediaBytes(entryId, b64);
     }
     await loadMedia();
   }
@@ -120,5 +152,14 @@
       {/each}
     </div>
     <button class="add-media-btn" data-testid="add-media-btn" onclick={addMedia}>＋ 图片</button>
+    <input
+      type="file"
+      accept="image/*"
+      multiple
+      class="hidden-file-input"
+      data-testid="media-file-input"
+      bind:this={fileInput}
+      onchange={onFilesPicked}
+    />
   </div>
 </div>

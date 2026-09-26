@@ -31,6 +31,7 @@ pub fn run() {
             commands::save_entry,
             commands::delete_entry,
             commands::insert_media,
+            commands::insert_media_bytes,
             commands::delete_media,
             commands::list_media,
             commands::media_counts,
