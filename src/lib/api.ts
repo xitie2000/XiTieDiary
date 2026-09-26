@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppErrorDto, ConfigStatus, Entry, MediaMeta, MediaWithUrl, SyncReport } from './types';
+import type {
+  AppErrorDto,
+  ConfigStatus,
+  Entry,
+  MediaMeta,
+  MediaWithUrl,
+  SyncReport,
+} from './types';
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -55,6 +62,14 @@ export function mediaCounts(): Promise<Record<string, number>> {
 
 export function getConfigStatus(): Promise<ConfigStatus> {
   return call<ConfigStatus>('get_config_status');
+}
+
+export function saveConfig(content: string): Promise<void> {
+  return call<void>('save_config', { content });
+}
+
+export function importConfigFromPath(path: string): Promise<void> {
+  return call<void>('import_config_from_path', { path });
 }
 
 export function cleanupEmptyDrafts(): Promise<number> {

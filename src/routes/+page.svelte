@@ -14,6 +14,7 @@
 
   onMount(async () => {
     store.loadEntries();
+    store.loadConfigStatus();
     const unlisten = await listen<{ status: string; message?: string }>(
       'sync://status',
       (e) => {

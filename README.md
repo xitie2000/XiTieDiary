@@ -47,6 +47,10 @@
 
 所有字段也可以用环境变量 `XITIEDIARY_*` 覆盖（如 `XITIEDIARY_BUCKET`）。
 
+> **配置文件位置**：开发时放仓库根目录（`pnpm tauri dev` 的查找点）；安装版在应用数据目录
+> （Windows：`%APPDATA%\com.xitie2000.xitiediary\local.json`）。**Android 端无需手动放置**：
+> 首次点同步栏的「导入配置」按钮，选择你的 `local.json` 即可，导入后自动开始同步。
+
 > **安全警示**：`local.json` 永远不要提交到仓库。如果误提交了凭证，仅删除提交是不够的——**必须立刻到云控制台轮换（禁用并重建）该 AccessKey**。
 
 ## 构建

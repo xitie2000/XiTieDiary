@@ -36,6 +36,8 @@ pub fn run() {
             commands::list_media,
             commands::media_counts,
             commands::get_config_status,
+            commands::save_config,
+            commands::import_config_from_path,
             commands::cleanup_empty_drafts,
             commands::sync_now
         ])

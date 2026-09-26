@@ -54,7 +54,7 @@ fn apply_env_overrides(cfg: &mut SyncConfig) {
     env_override(&mut cfg.access_key_secret, "XITIEDIARY_ACCESS_KEY_SECRET");
 }
 
-fn validate(mut cfg: SyncConfig) -> Result<SyncConfig, ConfigError> {
+pub(crate) fn validate_config(mut cfg: SyncConfig) -> Result<SyncConfig, ConfigError> {
     if cfg.provider.is_empty() || !VALID_PROVIDERS.contains(&cfg.provider.as_str()) {
         return Err(ConfigError::Incomplete("provider".into()));
     }
@@ -101,7 +101,7 @@ pub fn load_config(
         .map_err(|e| ConfigError::Malformed(e.to_string()))?;
     let mut cfg = cfg;
     apply_env_overrides(&mut cfg);
-    validate(cfg)
+    validate_config(cfg)
 }
 
 #[cfg(test)]

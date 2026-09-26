@@ -262,6 +262,28 @@ pub fn get_config_status(app: AppHandle) -> Result<ConfigStatus, AppErrorDto> {
     }
 }
 
+fn save_config_to(data_dir: &std::path::Path, content: &str) -> Result<(), AppErrorDto> {
+    let cfg: crate::config::SyncConfig = serde_json::from_str(content).map_err(|e| {
+        dto(AppError::Config(crate::config::ConfigError::Malformed(e.to_string())))
+    })?;
+    crate::config::validate_config(cfg).map_err(dto)?;
+    std::fs::write(data_dir.join("local.json"), content).map_err(dto)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_config(app: AppHandle, content: String) -> Result<(), AppErrorDto> {
+    let data_dir = app_data_dir(&app)?;
+    save_config_to(&data_dir, &content)
+}
+
+#[tauri::command]
+pub fn import_config_from_path(app: AppHandle, path: String) -> Result<(), AppErrorDto> {
+    let content = std::fs::read_to_string(&path).map_err(dto)?;
+    let data_dir = app_data_dir(&app)?;
+    save_config_to(&data_dir, &content)
+}
+
 #[tauri::command]
 pub fn cleanup_empty_drafts(db: State<'_, std::sync::Arc<Db>>) -> Result<u32, AppErrorDto> {
     db.cleanup_empty_drafts().map_err(dto)
@@ -305,7 +327,7 @@ mod tests {
         // 桌面路径：insert_media 读文件后调用 write_media
         let m1 = write_media(&dir, &db, "e1", png.clone()).unwrap();
 
-        // Android 路径：base64 传输后解码，调用同一�?write_media
+        // Android 路径：base64 传输后解码，调用同一个 write_media
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
         let decoded = base64::engine::general_purpose::STANDARD
@@ -319,6 +341,39 @@ mod tests {
         let f1 = std::fs::read(dir.join("media").join(format!("{}.jpg", m1.id))).unwrap();
         let f2 = std::fs::read(dir.join("media").join(format!("{}.jpg", m2.id))).unwrap();
         assert_eq!(f1, f2, "两条管线应产出逐字节一致的 JPEG");
+    }
+
+    #[test]
+    fn save_config_to_writes_valid_config() {
+        let dir = std::env::temp_dir().join(format!("xitiediary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let content = r#"{"provider":"oss","endpoint":"https://oss-cn-beijing.aliyuncs.com","region":"cn-beijing","bucket":"b","prefix":"xitiediary","access_key_id":"ak","access_key_secret":"sk"}"#;
+        save_config_to(&dir, content).unwrap();
+        let written = std::fs::read_to_string(dir.join("local.json")).unwrap();
+        assert_eq!(written, content);
+        // 写入后 load_config 应能直接加载（app_data 路径查找点）
+        let cfg = crate::config::load_config(Some(&dir.join("local.json")), None).unwrap();
+        assert_eq!(cfg.bucket, "b");
+    }
+
+    #[test]
+    fn save_config_to_rejects_malformed_json() {
+        let dir = std::env::temp_dir().join(format!("xitiediary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = save_config_to(&dir, "not json").unwrap_err();
+        assert_eq!(err.code, "config");
+        assert!(!dir.join("local.json").exists(), "失败时不应写入文件");
+    }
+
+    #[test]
+    fn save_config_to_rejects_invalid_provider_and_hides_secret() {
+        let dir = std::env::temp_dir().join(format!("xitiediary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let content = r#"{"provider":"ftp","bucket":"b","access_key_id":"ak","access_key_secret":"supersecret123"}"#;
+        let err = save_config_to(&dir, content).unwrap_err();
+        assert_eq!(err.code, "config");
+        assert!(!err.message.contains("supersecret123"), "错误信息不应泄露密钥");
+        assert!(!dir.join("local.json").exists());
     }
 
     #[tokio::test]
