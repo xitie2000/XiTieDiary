@@ -8,7 +8,16 @@
 - 本地优先：离线完全可用，SQLite 存储
 - 云同步：Joplin 式对象存储同步（阿里云 OSS / AWS S3 / 腾讯云 COS / WebDAV），**自带凭证、零自建服务器**
 - 冲突不丢数据：双端并发修改时自动保留新版本并生成 `[冲突]` 副本
-- 图片自动压缩（长边 ≤1920px JPEG），桌面安装包约 2.5MB
+- 图片自动压缩（长边 ≤1920px JPEG）
+
+## 实测体积（v0.1.0）
+
+| 平台 | 产物 | 体积 |
+|---|---|---|
+| Windows | NSIS 安装包 | 2.55 MB |
+| Windows | MSI 安装包 | 3.55 MB |
+| Windows | 裸 exe | 7.41 MB |
+| Android | release APK（arm64） | 18.3 MB |
 
 ## 同步原理
 
@@ -42,14 +51,28 @@
 
 ## 构建
 
-工具链：Node.js 22+ / pnpm / Rust stable / VS Build Tools（Windows 桌面）；Android 还需 Android Studio（SDK 36 + NDK r28）。
+工具链：Node.js 22+ / pnpm / Rust stable / VS Build Tools（Windows 桌面）；Android 还需 Android Studio（SDK 36 + NDK r28）+ JDK 21。
 
 ```powershell
 pnpm install
-pnpm tauri dev            # 开发运行（桌面）
-pnpm tauri build          # 打包 Windows 安装包
-pnpm tauri android build  # 打包 Android APK（先 pnpm tauri android init）
+pnpm tauri dev                      # 开发运行（桌面）
+pnpm tauri build                    # 打包 Windows 安装包
+pnpm tauri android init             # 首次：生成 Android 工程
+pnpm tauri android build --target aarch64  # 打包 Android APK
 ```
+
+> 国内网络提示：`gen/android/gradle/wrapper/gradle-wrapper.properties` 与
+> `gen/android/build.gradle.kts` 已配置腾讯/阿里云镜像，如在海 外网络可自行换回官方源。
+
+## 开发
+
+```powershell
+pnpm test      # 前端 vitest
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust 单测（含同步引擎双客户端场景）
+cargo test --manifest-path src-tauri/Cargo.toml --test oss_live -- --ignored  # 真实 OSS 手动验证（需 local.json）
+```
+
+同步协议的设计与已知取舍见 `docs/superpowers/specs/2026-09-26-xitiediary-v1-design.md`。
 
 ## 许可证
 
