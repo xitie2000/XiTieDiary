@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod db;
 mod error;
+mod images;
 mod types;
 
 use db::Db;
@@ -10,6 +11,7 @@ use db::Db;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             use tauri::Manager;
             let data_dir = app.path().app_data_dir()?;
@@ -25,6 +27,8 @@ pub fn run() {
             commands::delete_entry,
             commands::insert_media,
             commands::delete_media,
+            commands::list_media,
+            commands::media_counts,
             commands::get_config_status,
             commands::cleanup_empty_drafts
         ])

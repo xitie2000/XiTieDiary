@@ -16,6 +16,10 @@ export interface MediaMeta {
   deleted: boolean;
 }
 
+export interface MediaWithUrl extends MediaMeta {
+  url_path: string;
+}
+
 export interface ConfigStatus {
   configured: boolean;
   provider: string | null;

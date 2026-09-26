@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppErrorDto, ConfigStatus, Entry, MediaMeta } from './types';
+import type { AppErrorDto, ConfigStatus, Entry, MediaMeta, MediaWithUrl } from './types';
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -39,6 +39,14 @@ export function insertMedia(entryId: string, path: string): Promise<MediaMeta> {
 
 export function deleteMedia(id: string): Promise<void> {
   return call<void>('delete_media', { id });
+}
+
+export function listMedia(entryId: string): Promise<MediaWithUrl[]> {
+  return call<MediaWithUrl[]>('list_media', { entryId });
+}
+
+export function mediaCounts(): Promise<Record<string, number>> {
+  return call<Record<string, number>>('media_counts');
 }
 
 export function getConfigStatus(): Promise<ConfigStatus> {

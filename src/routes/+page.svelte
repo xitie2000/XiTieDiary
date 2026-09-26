@@ -45,7 +45,11 @@
   </header>
 
   {#if view.page === 'list'}
-    <EntryList entries={store.entries} onselect={(id) => (view = { page: 'editor', id })} />
+    <EntryList
+      entries={store.entries}
+      mediaCounts={store.mediaCounts}
+      onselect={(id) => (view = { page: 'editor', id })}
+    />
   {:else}
     <EntryEditor entryId={view.id} onclose={backToList} />
   {/if}

@@ -1,6 +1,7 @@
 use crate::config::load_config;
 use crate::db::{current_ms, Db};
 use crate::error::{AppError, AppErrorDto};
+use crate::images::compress_to_jpeg;
 use crate::types::{Entry, MediaMeta};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -10,6 +11,13 @@ pub struct ConfigStatus {
     pub configured: bool,
     pub provider: Option<String>,
     pub bucket: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MediaWithUrl {
+    #[serde(flatten)]
+    pub meta: MediaMeta,
+    pub url_path: String,
 }
 
 fn dto(e: impl Into<AppError>) -> AppErrorDto {
@@ -86,34 +94,42 @@ pub fn insert_media(
     entry_id: String,
     path: String,
 ) -> Result<MediaMeta, AppErrorDto> {
-    let bytes = std::fs::read(&path).map_err(dto)?;
+    let raw = std::fs::read(&path).map_err(dto)?;
+    let (bytes, _w, _h) = compress_to_jpeg(&raw, 1920, 80).map_err(dto)?;
     let data_dir = app_data_dir(&app)?;
     let media_dir = data_dir.join("media");
     std::fs::create_dir_all(&media_dir).map_err(dto)?;
     let id = uuid::Uuid::new_v4().to_string();
     std::fs::write(media_dir.join(format!("{id}.jpg")), &bytes).map_err(dto)?;
-    let ext = std::path::Path::new(&path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let mime = match ext.as_str() {
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        _ => "image/jpeg",
-    }
-    .to_string();
     let m = MediaMeta {
         id,
         entry_id,
-        mime,
+        mime: "image/jpeg".into(),
         size: bytes.len() as i64,
         updated_at: current_ms(),
         deleted: false,
     };
     db.insert_media(&m).map_err(dto)?;
     Ok(m)
+}
+
+#[tauri::command]
+pub fn list_media(app: AppHandle, db: State<Db>, entry_id: String) -> Result<Vec<MediaWithUrl>, AppErrorDto> {
+    let data_dir = app_data_dir(&app)?;
+    let media_dir = data_dir.join("media");
+    let list = db.list_media(&entry_id).map_err(dto)?;
+    Ok(list
+        .into_iter()
+        .map(|meta| {
+            let url_path = media_dir.join(format!("{}.jpg", meta.id)).to_string_lossy().into_owned();
+            MediaWithUrl { meta, url_path }
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn media_counts(db: State<Db>) -> Result<std::collections::HashMap<String, u32>, AppErrorDto> {
+    db.media_counts_by_entry().map_err(dto)
 }
 
 #[tauri::command]

@@ -214,6 +214,18 @@ impl Db {
         })
     }
 
+    pub fn media_counts_by_entry(&self) -> rusqlite::Result<std::collections::HashMap<String, u32>> {
+        self.with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT entry_id, COUNT(*) FROM media WHERE deleted = 0 GROUP BY entry_id",
+            )?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows.into_iter().collect())
+        })
+    }
+
     pub fn soft_delete_media(&self, id: &str) -> rusqlite::Result<()> {
         self.with_conn(|c| {
             c.execute(
@@ -437,6 +449,18 @@ mod tests {
         assert!(all.iter().find(|m| m.id == "m1").unwrap().deleted);
         assert!(all.iter().find(|m| m.id == "m2").unwrap().deleted);
         assert!(!all.iter().find(|m| m.id == "m3").unwrap().deleted);
+    }
+
+    #[test]
+    fn media_counts_by_entry_counts_only_undeleted() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_media(&media("m1", "e1")).unwrap();
+        db.insert_media(&media("m2", "e1")).unwrap();
+        db.insert_media(&media("m3", "e2")).unwrap();
+        db.soft_delete_media("m3").unwrap();
+        let counts = db.media_counts_by_entry().unwrap();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts.get("e1"), Some(&2));
     }
 
     #[test]

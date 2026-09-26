@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 import EntryEditor from './EntryEditor.svelte';
 import type { Entry } from '../types';
@@ -8,9 +8,21 @@ const mocks = vi.hoisted(() => ({
   saveEntry: vi.fn(),
   cleanupEmptyDrafts: vi.fn(),
   deleteEntry: vi.fn(),
+  insertMedia: vi.fn(),
+  listMedia: vi.fn(),
+  deleteMedia: vi.fn(),
 }));
 
 vi.mock('$lib/api', () => mocks);
+
+const dialogMocks = vi.hoisted(() => ({ open: vi.fn() }));
+vi.mock('@tauri-apps/plugin-dialog', () => dialogMocks);
+
+beforeAll(() => {
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
+    convertFileSrc: (p: string) => `asset://${p}`,
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -19,6 +31,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.listMedia.mockResolvedValue([]);
 });
 
 function mockEntry(over: Partial<Entry> = {}): Entry {
@@ -34,8 +47,22 @@ function mockEntry(over: Partial<Entry> = {}): Entry {
 }
 
 async function flush() {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve();
+  }
+}
+
+function mediaItem(over: Partial<import('../types').MediaWithUrl> = {}): import('../types').MediaWithUrl {
+  return {
+    id: 'm1',
+    entry_id: 'e1',
+    mime: 'image/jpeg',
+    size: 100,
+    updated_at: 5,
+    deleted: false,
+    url_path: 'C:\\data\\media\\m1.jpg',
+    ...over,
+  };
 }
 
 describe('EntryEditor', () => {
@@ -80,5 +107,44 @@ describe('EntryEditor', () => {
     await fireEvent.click(screen.getByTestId('delete-btn'));
     expect(mocks.deleteEntry).toHaveBeenCalledWith('e1');
     expect(onclose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders_media_thumbnails', async () => {
+    mocks.getEntry.mockResolvedValue(mockEntry({ content: 'x' }));
+    mocks.listMedia.mockResolvedValue([mediaItem()]);
+    render(EntryEditor, { props: { entryId: 'e1', onclose: vi.fn() } });
+    await flush();
+
+    const img = screen.getByTestId('media-thumb');
+    expect(img.getAttribute('src')).toContain('m1.jpg');
+  });
+
+  it('add_button_opens_dialog_and_inserts', async () => {
+    mocks.getEntry.mockResolvedValue(mockEntry({ content: 'x' }));
+    mocks.listMedia.mockResolvedValue([]);
+    dialogMocks.open.mockResolvedValue(['C:\\pics\\a.png', 'C:\\pics\\b.png']);
+    mocks.insertMedia.mockResolvedValue(mediaItem());
+    render(EntryEditor, { props: { entryId: 'e1', onclose: vi.fn() } });
+    await flush();
+
+    await fireEvent.click(screen.getByTestId('add-media-btn'));
+    await flush();
+    expect(dialogMocks.open).toHaveBeenCalled();
+    expect(mocks.insertMedia).toHaveBeenCalledWith('e1', 'C:\\pics\\a.png');
+    expect(mocks.insertMedia).toHaveBeenCalledWith('e1', 'C:\\pics\\b.png');
+    expect(mocks.listMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it('remove_media_calls_delete', async () => {
+    mocks.getEntry.mockResolvedValue(mockEntry({ content: 'x' }));
+    mocks.listMedia.mockResolvedValue([mediaItem()]);
+    mocks.deleteMedia.mockResolvedValue(undefined);
+    render(EntryEditor, { props: { entryId: 'e1', onclose: vi.fn() } });
+    await flush();
+
+    await fireEvent.click(screen.getByTestId('media-remove-btn'));
+    await flush();
+    expect(mocks.deleteMedia).toHaveBeenCalledWith('m1');
+    expect(mocks.listMedia).toHaveBeenCalledTimes(2);
   });
 });
