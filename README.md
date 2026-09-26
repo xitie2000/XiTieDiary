@@ -68,6 +68,28 @@ pnpm tauri android build --target aarch64  # 打包 Android APK
 > 国内网络提示：`gen/android/gradle/wrapper/gradle-wrapper.properties` 与
 > `gen/android/build.gradle.kts` 已配置腾讯/阿里云镜像，如在海 外网络可自行换回官方源。
 
+## TODO（待修复的网络问题）
+
+开发过程中因国内网络受限遇到并绕过的问题，后续有条件时建议回退到官方渠道：
+
+- [ ] **rustls-platform-verifier Kotlin 组件**（`gen/android/app/src/main/java/org/rustls/platformverifier/`）
+  官方通过 Gradle 从 GitHub Maven 仓库拉取 AAR（`raw.githubusercontent.com/rustls/rustls-platform-verifier/android/`），
+  GitHub 不可达时无法使用。当前用手写的 Kotlin 实现替代（用系统 `X509TrustManager` 校验证书链），
+  并加了 ProGuard keep 规则防 R8 裁剪。网络恢复后建议换回官方 AAR（版本号见 `Cargo.lock` 中
+  `rustls-platform-verifier-android`）。
+- [ ] **Gradle 依赖仓库**（`gen/android/build.gradle.kts` + `buildSrc/build.gradle.kts`）
+  已插入阿里云镜像（gradle-plugin / google / public），官方源（`plugins.gradle.org` /
+  `maven.google.com`）不可达导致 `kotlin-compiler-embeddable` 等下载失败。海外构建时可删掉镜像行回退。
+- [ ] **Gradle 发行版**（`gen/android/gradle/wrapper/gradle-wrapper.properties`）
+  `services.gradle.org` 下载超时（60% 处断连），已换腾讯镜像
+  `mirrors.cloud.tencent.com/gradle/`。海外环境可改回官方 URL。
+- [ ] **GitHub HTTPS 推送偶发失败**（`schannel: failed to receive handshake, SSL/TLS connection failed`）
+  `git push` 间歇性握手失败，重试即可成功。如频繁出现考虑配置 git 代理
+  （`git config --global http.proxy socks5://...`）。
+- [ ] **Android Release APK 签名**：当前使用 debug keystore 占位
+  （`~/.android/debug.keystore`），正式发布前需生成专用签名密钥
+  （`keytool -genkeypair` + 配置 `gen/android/keystore.properties`）。
+
 ## 开发
 
 ```powershell
