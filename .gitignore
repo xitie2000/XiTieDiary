@@ -22,15 +22,16 @@ migrate_working_dir/
 .vscode/
 !.vscode/settings.json
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
+# Node / Svelte related
+node_modules
+/build
+/.svelte-kit
+/package
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Android: jniLibs 是指向本地构建产物的符号链接，每次构建重新生成
+src-tauri/gen/android/app/src/main/jniLibs/
 
 # Symbolication related
 app.*.symbols
@@ -38,21 +39,12 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio build artifacts
-/android/app/debug
-/android/app/profile
-/android/app/release
-
 # Android local config (may contain API keys)
 **/local.properties
 **/key.properties
 
-# iOS/macOS signing
-**/ios/Flutter/flutter_export_environment.sh
-**/*.mobileprovision
-
 # ===== Secrets: NEVER commit =====
-# Local dev config injected via --dart-define-from-file
+# Local sync config (user-supplied cloud credentials)
 local.json
 *.local.json
 
