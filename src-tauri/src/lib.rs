@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod error;
 mod images;
+mod sync;
 mod types;
 
 use db::Db;

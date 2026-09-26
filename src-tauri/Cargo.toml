@@ -27,6 +27,8 @@ uuid = { version = "1.26.1", features = ["v4"] }
 thiserror = "2.0.21"
 image = "0.25.10"
 tauri-plugin-dialog = "2.7.3"
+opendal = { version = "0.59.3", features = ["services-oss", "services-s3", "services-cos", "services-webdav", "services-fs"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
