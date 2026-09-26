@@ -123,3 +123,70 @@ main {
   justify-content: center;
   color: var(--muted);
 }
+
+.editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--fg);
+}
+
+.icon-btn:active {
+  background: #f2f0ec;
+}
+
+.icon-btn.danger {
+  color: #c05b4d;
+}
+
+.date-input {
+  flex: 1;
+  border: none;
+  font-size: 15px;
+  color: var(--fg);
+  background: transparent;
+}
+
+.editor-textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 16px 18px;
+  font-size: 16px;
+  line-height: 1.8;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.media-area {
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  padding: 10px 12px;
+  min-height: 56px;
+}
+
+.media-placeholder {
+  color: var(--muted);
+  font-size: 13px;
+}

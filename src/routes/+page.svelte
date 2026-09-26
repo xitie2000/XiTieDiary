@@ -3,6 +3,7 @@
   import { store } from '$lib/stores.svelte';
   import { createDraftEntry } from '$lib/api';
   import EntryList from '$lib/components/EntryList.svelte';
+  import EntryEditor from '$lib/components/EntryEditor.svelte';
 
   let view = $state<{ page: 'list' } | { page: 'editor'; id: string }>({ page: 'list' });
   let creating = $state(false);
@@ -28,6 +29,11 @@
       creating = false;
     }
   }
+
+  function backToList() {
+    store.loadEntries();
+    view = { page: 'list' };
+  }
 </script>
 
 <main>
@@ -39,11 +45,8 @@
   </header>
 
   {#if view.page === 'list'}
-    <EntryList
-      entries={store.entries}
-      onselect={(id) => (view = { page: 'editor', id })}
-    />
+    <EntryList entries={store.entries} onselect={(id) => (view = { page: 'editor', id })} />
   {:else}
-    <div class="editor-placeholder" data-testid="editor-placeholder">编辑器（Task 7 接入）</div>
+    <EntryEditor entryId={view.id} onclose={backToList} />
   {/if}
 </main>
