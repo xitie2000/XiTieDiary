@@ -75,12 +75,13 @@ impl Remote {
         Ok(buf.to_vec())
     }
 
-    pub async fn put_entry(&self, id: &str, body: &[u8]) -> Result<(), AppError> {
-        self.op
+    pub async fn put_entry(&self, id: &str, body: &[u8]) -> Result<Option<String>, AppError> {
+        let meta = self
+            .op
             .write(&format!("entries/{id}.json"), body.to_vec())
             .await
-            .map(|_| ())
-            .map_err(remote_err)
+            .map_err(remote_err)?;
+        Ok(meta.etag().map(|s| s.to_string()))
     }
 
     pub async fn get_media(&self, id: &str) -> Result<Vec<u8>, AppError> {

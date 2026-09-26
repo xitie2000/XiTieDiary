@@ -180,15 +180,43 @@ impl Db {
         })
     }
 
-    pub fn insert_media(&self, m: &MediaMeta) -> rusqlite::Result<()> {
+    pub fn list_all_entries(&self) -> rusqlite::Result<Vec<Entry>> {
         self.with_conn(|c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {ENTRY_COLS} FROM entries ORDER BY id ASC"
+            ))?;
+            let rows = stmt
+                .query_map([], row_to_entry)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    fn bump_entry_updated_at(&self, entry_id: &str) -> rusqlite::Result<()> {
+        self.with_conn(|c| {
+            c.execute(
+                "UPDATE entries SET updated_at = ?2 WHERE id = ?1 AND deleted = 0",
+                params![entry_id, now_ms()],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn insert_media(&self, m: &MediaMeta) -> rusqlite::Result<()> {
+        self.insert_media_quiet(m)?;
+        self.bump_entry_updated_at(&m.entry_id)
+    }
+
+    pub fn insert_media_quiet(&self, m: &MediaMeta) -> rusqlite::Result<()> {
+        let res: rusqlite::Result<()> = self.with_conn(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO media (id, entry_id, mime, size, updated_at, deleted) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![m.id, m.entry_id, m.mime, m.size, m.updated_at, m.deleted as i64],
             )?;
             Ok(())
-        })
+        });
+        res
     }
 
     pub fn list_media(&self, entry_id: &str) -> rusqlite::Result<Vec<MediaMeta>> {
@@ -227,6 +255,20 @@ impl Db {
     }
 
     pub fn soft_delete_media(&self, id: &str) -> rusqlite::Result<()> {
+        let entry_id = self.with_conn(|c| {
+            c.query_row(
+                "SELECT entry_id FROM media WHERE id = ?1",
+                params![id],
+                |r| r.get::<_, String>(0),
+            )
+        });
+        if let Ok(eid) = entry_id {
+            self.bump_entry_updated_at(&eid)?;
+        }
+        self.soft_delete_media_quiet(id)
+    }
+
+    pub fn soft_delete_media_quiet(&self, id: &str) -> rusqlite::Result<()> {
         self.with_conn(|c| {
             c.execute(
                 "UPDATE media SET deleted = 1, updated_at = ?2 WHERE id = ?1",
@@ -461,6 +503,33 @@ mod tests {
         let counts = db.media_counts_by_entry().unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts.get("e1"), Some(&2));
+    }
+
+    #[test]
+    fn list_all_entries_includes_deleted_tombstones() {
+        let db = Db::open_in_memory().unwrap();
+        db.upsert_entry(&entry("live", "2026-09-01", "x")).unwrap();
+        db.upsert_entry(&entry("gone", "2026-09-01", "y")).unwrap();
+        db.soft_delete_entry("gone").unwrap();
+        let all = db.list_all_entries().unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().find(|e| e.id == "gone").unwrap().deleted);
+        assert!(!all.iter().find(|e| e.id == "live").unwrap().deleted);
+    }
+
+    #[test]
+    fn media_ops_bump_entry_updated_at() {
+        let db = Db::open_in_memory().unwrap();
+        db.upsert_entry(&entry("e1", "2026-09-01", "x")).unwrap();
+        let before = db.get_entry("e1").unwrap().unwrap().updated_at;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        db.insert_media(&media("m1", "e1")).unwrap();
+        let after_insert = db.get_entry("e1").unwrap().unwrap().updated_at;
+        assert!(after_insert > before);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        db.soft_delete_media("m1").unwrap();
+        let after_delete = db.get_entry("e1").unwrap().unwrap().updated_at;
+        assert!(after_delete > after_insert);
     }
 
     #[test]

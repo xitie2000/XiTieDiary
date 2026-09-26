@@ -9,6 +9,8 @@ pub struct RemoteEntry {
     pub created_at: i64,
     pub updated_at: i64,
     pub deleted: bool,
+    #[serde(default)]
+    pub media: Vec<String>,
 }
 
 impl From<Entry> for RemoteEntry {
@@ -20,6 +22,7 @@ impl From<Entry> for RemoteEntry {
             created_at: e.created_at,
             updated_at: e.updated_at,
             deleted: e.deleted,
+            media: Vec::new(),
         }
     }
 }
@@ -136,6 +139,7 @@ mod tests {
             created_at: 10,
             updated_at: updated,
             deleted: false,
+            media: Vec::new(),
         }
     }
 
