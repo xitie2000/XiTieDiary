@@ -113,9 +113,11 @@ impl Remote {
     pub async fn read_lock(&self) -> Result<Option<LockInfo>, AppError> {
         match self.op.read("lock").await {
             Ok(bytes) => {
-                let info: LockInfo = serde_json::from_slice(&bytes.to_vec())
-                    .map_err(|e| AppError::Sync(e.to_string()))?;
-                Ok(Some(info))
+                // 损坏的锁文件按"无锁/陈旧"处理，不阻塞同步
+                match serde_json::from_slice(&bytes.to_vec()) {
+                    Ok(info) => Ok(Some(info)),
+                    Err(_) => Ok(None),
+                }
             }
             Err(e) if e.kind() == opendal::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(remote_err(e)),

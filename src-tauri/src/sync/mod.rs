@@ -19,6 +19,17 @@ pub struct SyncReport {
     pub downloaded_media: u32,
     pub uploaded_media: u32,
     pub conflicts: u32,
+    pub skipped_objects: u32,
+}
+
+/// 远端版本应用守卫：若本地行在同步快照之后又被修改（或行状态与快照矛盾），
+/// 返回 false —— 跳过覆盖，留给下一次同步重新判定，避免同步窗口内丢字。
+fn should_apply_remote(db: &Db, id: &str, snapshot_updated_at: Option<i64>) -> bool {
+    match db.get_entry(id) {
+        Ok(Some(current)) => snapshot_updated_at.is_some_and(|s| current.updated_at <= s),
+        Ok(None) => snapshot_updated_at.is_none(),
+        Err(_) => false,
+    }
 }
 
 pub async fn run_sync(
@@ -59,7 +70,7 @@ async fn sync_locked(
 
     let mut downloaded_media_refs: HashMap<String, String> = HashMap::new();
     let mut downloaded_entry_ids: HashSet<String> = HashSet::new();
-    let mut pending_copies: Vec<Entry> = Vec::new();
+    let mut pending_copies: Vec<(Entry, Vec<String>)> = Vec::new();
 
     for e in local_entries {
         let key = format!("entries/{}.json", e.id);
@@ -78,9 +89,17 @@ async fn sync_locked(
                 Some(stub_remote(&e, ls))
             } else {
                 let bytes = remote.get_entry(&e.id).await?;
-                let re: RemoteEntry = serde_json::from_slice(&bytes)
-                    .map_err(|err| AppError::Sync(format!("远端条目解析失败: {err}")))?;
-                Some(re)
+                match serde_json::from_slice::<RemoteEntry>(&bytes) {
+                    Ok(re) => Some(re),
+                    Err(err) => {
+                        report.skipped_objects += 1;
+                        eprintln!(
+                            "[sync] 跳过损坏的远端条目 entries/{}.json: {err}",
+                            e.id
+                        );
+                        continue;
+                    }
+                }
             }
         } else {
             None
@@ -101,6 +120,10 @@ async fn sync_locked(
             }
             EntryAction::Download => {
                 let re = remote_entry.expect("Download requires fetched remote entry");
+                if !should_apply_remote(db, &re.id, Some(e.updated_at)) {
+                    // 同步期间本地被编辑：跳过覆盖，留给下次同步重新判定（避免丢字）
+                    continue;
+                }
                 db.upsert_entry(&Entry::from(re.clone()))?;
                 db.set_remote_state(&RemoteState {
                     key: key.clone(),
@@ -120,6 +143,34 @@ async fn sync_locked(
             }
             EntryAction::Conflict { keep_local } => {
                 let re = remote_entry.expect("Conflict requires fetched remote entry");
+                if !keep_local && !should_apply_remote(db, &e.id, Some(e.updated_at)) {
+                    // 远端胜但本地在同步期间又被编辑：整条跳过，下次重新判定
+                    continue;
+                }
+                // 媒体归属：仅败者独有（胜者媒体列表之外）的媒体迁给副本；
+                // 双方共享的基线媒体留在胜者名下
+                let (winner_media, loser_media): (Vec<String>, Vec<String>) = if keep_local {
+                    (
+                        db.list_media(&e.id)?
+                            .iter()
+                            .map(|m| m.id.clone())
+                            .collect(),
+                        re.media.clone(),
+                    )
+                } else {
+                    (
+                        re.media.clone(),
+                        db.list_media(&e.id)?
+                            .iter()
+                            .map(|m| m.id.clone())
+                            .collect(),
+                    )
+                };
+                let loser_exclusive: Vec<String> = loser_media
+                    .iter()
+                    .filter(|m| !winner_media.contains(m))
+                    .cloned()
+                    .collect();
                 let (winner, loser_content, loser_date) = if keep_local {
                     (e.clone(), re.content.clone(), re.date.clone())
                 } else {
@@ -133,7 +184,14 @@ async fn sync_locked(
                     updated_at: current_ms(),
                     deleted: false,
                 };
-                pending_copies.push(copy);
+                db.upsert_entry(&copy)?;
+                // 败者独有媒体全部挂到副本名下：本地已有行改挂，缺行的留给媒体阶段下载
+                for mid in &loser_exclusive {
+                    let _ = db.link_media(mid, &copy.id);
+                    downloaded_media_refs
+                        .entry(mid.clone())
+                        .or_insert_with(|| copy.id.clone());
+                }
                 if keep_local {
                     upload_entry(db, remote, &e, &remote_list).await?;
                 } else {
@@ -143,6 +201,7 @@ async fn sync_locked(
                         downloaded_media_refs.insert(mid.clone(), re.id.clone());
                     }
                 }
+                pending_copies.push((copy, loser_exclusive));
                 db.set_remote_state(&RemoteState {
                     key: key.clone(),
                     etag: remote_etag.clone(),
@@ -167,10 +226,20 @@ async fn sync_locked(
         }
         let rs = db.get_remote_state(key)?;
         let bytes = remote.get_entry(&id).await?;
-        let re: RemoteEntry = serde_json::from_slice(&bytes)
-            .map_err(|err| AppError::Sync(format!("远端条目解析失败: {err}")))?;
+        let re: RemoteEntry = match serde_json::from_slice(&bytes) {
+            Ok(re) => re,
+            Err(err) => {
+                report.skipped_objects += 1;
+                eprintln!("[sync] 跳过损坏的远端条目 {key}: {err}");
+                continue;
+            }
+        };
         let action = decide_entry(None, rs.as_ref().and_then(|r| r.updated_at), Some(re.clone()));
         if matches!(action, EntryAction::Download) {
+            if !should_apply_remote(db, &id, None) {
+                // 同步期间本地新建了该条目：跳过覆盖
+                continue;
+            }
             db.upsert_entry(&Entry::from(re.clone()))?;
             db.set_remote_state(&RemoteState {
                 key: key.clone(),
@@ -185,12 +254,12 @@ async fn sync_locked(
         }
     }
 
-    for copy in pending_copies {
-        let re = RemoteEntry::from(copy.clone());
+    for (copy, copy_media) in pending_copies {
+        let mut re = RemoteEntry::from(copy.clone());
+        re.media = copy_media;
         let bytes = serde_json::to_vec(&re)
             .map_err(|e| AppError::Sync(e.to_string()))?;
         let etag = remote.put_entry(&copy.id, &bytes).await?;
-        db.upsert_entry(&copy)?;
         db.set_remote_state(&RemoteState {
             key: format!("entries/{}.json", copy.id),
             etag,

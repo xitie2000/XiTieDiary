@@ -3,9 +3,11 @@
   import { listen } from '@tauri-apps/api/event';
   import { store } from '$lib/stores.svelte';
   import { createDraftEntry, syncNow } from '$lib/api';
+  import { toast } from '$lib/toast.svelte';
   import EntryList from '$lib/components/EntryList.svelte';
   import EntryEditor from '$lib/components/EntryEditor.svelte';
   import SyncBar from '$lib/components/SyncBar.svelte';
+  import Toast from '$lib/components/Toast.svelte';
 
   let view = $state<{ page: 'list' } | { page: 'editor'; id: string }>({ page: 'list' });
   let creating = $state(false);
@@ -22,7 +24,7 @@
             store.loadEntries();
           }
           if (status === 'error' && message) {
-            console.error(`[sync] ${message}`);
+            toast.show(`同步失败: ${message}`);
           }
         }
       }
@@ -73,3 +75,5 @@
     <EntryEditor entryId={view.id} onclose={backToList} />
   {/if}
 </main>
+
+<Toast />

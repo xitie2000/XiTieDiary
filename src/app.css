@@ -269,3 +269,34 @@ main {
 .hidden-file-input {
   display: none;
 }
+
+.toast-area {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  width: min(380px, 90vw);
+}
+
+.toast {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  text-align: left;
+}
+
+.toast.error {
+  background: #c05b4d;
+}
+
+.toast.ok {
+  background: #4a7ba6;
+}

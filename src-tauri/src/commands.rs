@@ -86,7 +86,7 @@ async fn sync_inner(data_dir: &std::path::Path, db: &Db) -> Result<SyncReport, A
 }
 
 #[tauri::command]
-pub async fn sync_now(app: AppHandle, db: State<'_, Db>) -> Result<SyncReport, AppErrorDto> {
+pub async fn sync_now(app: AppHandle, db: State<'_, std::sync::Arc<Db>>) -> Result<SyncReport, AppErrorDto> {
     let data_dir = app_data_dir(&app)?;
     let handle = app.clone();
     do_sync_core(&data_dir, &db, move |ev| {
@@ -109,7 +109,7 @@ fn app_data_dir(app: &AppHandle) -> Result<std::path::PathBuf, AppErrorDto> {
 
 #[tauri::command]
 pub fn list_entries(
-    db: State<Db>,
+    db: State<'_, std::sync::Arc<Db>>,
     from: Option<String>,
     to: Option<String>,
 ) -> Result<Vec<Entry>, AppErrorDto> {
@@ -117,12 +117,12 @@ pub fn list_entries(
 }
 
 #[tauri::command]
-pub fn get_entry(db: State<Db>, id: String) -> Result<Option<Entry>, AppErrorDto> {
+pub fn get_entry(db: State<'_, std::sync::Arc<Db>>, id: String) -> Result<Option<Entry>, AppErrorDto> {
     db.get_entry(&id).map_err(dto)
 }
 
 #[tauri::command]
-pub fn create_draft_entry(db: State<Db>, date: String) -> Result<Entry, AppErrorDto> {
+pub fn create_draft_entry(db: State<'_, std::sync::Arc<Db>>, date: String) -> Result<Entry, AppErrorDto> {
     let now = current_ms();
     let e = Entry {
         id: uuid::Uuid::new_v4().to_string(),
@@ -138,7 +138,7 @@ pub fn create_draft_entry(db: State<Db>, date: String) -> Result<Entry, AppError
 
 #[tauri::command]
 pub fn save_entry(
-    db: State<Db>,
+    db: State<'_, std::sync::Arc<Db>>,
     id: String,
     date: String,
     content: String,
@@ -155,7 +155,7 @@ pub fn save_entry(
 }
 
 #[tauri::command]
-pub fn delete_entry(db: State<Db>, id: String) -> Result<(), AppErrorDto> {
+pub fn delete_entry(db: State<'_, std::sync::Arc<Db>>, id: String) -> Result<(), AppErrorDto> {
     db.soft_delete_entry(&id)
         .map_err(dto)?
         .ok_or_else(|| dto(AppError::NotFound(format!("entries/{id}"))))?;
@@ -187,34 +187,42 @@ fn write_media(
 }
 
 #[tauri::command]
-pub fn insert_media(
+pub async fn insert_media(
     app: AppHandle,
-    db: State<Db>,
+    db: State<'_, std::sync::Arc<Db>>,
     entry_id: String,
     path: String,
 ) -> Result<MediaMeta, AppErrorDto> {
     let raw = std::fs::read(&path).map_err(dto)?;
     let data_dir = app_data_dir(&app)?;
-    write_media(&data_dir, &db, &entry_id, raw)
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || write_media(&data_dir, &db, &entry_id, raw))
+        .await
+        .map_err(|e| dto(AppError::Sync(format!("图片处理任务失败: {e}"))))?
 }
 
 #[tauri::command]
-pub fn insert_media_bytes(
+pub async fn insert_media_bytes(
     app: AppHandle,
-    db: State<Db>,
+    db: State<'_, std::sync::Arc<Db>>,
     entry_id: String,
     data: String,
 ) -> Result<MediaMeta, AppErrorDto> {
-    use base64::Engine;
-    let raw = base64::engine::general_purpose::STANDARD
-        .decode(data.as_bytes())
-        .map_err(|e| dto(AppError::Sync(format!("图片数据解码失败: {e}"))))?;
     let data_dir = app_data_dir(&app)?;
-    write_media(&data_dir, &db, &entry_id, raw)
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        use base64::Engine;
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(data.as_bytes())
+            .map_err(|e| dto(AppError::Sync(format!("图片数据解码失败: {e}"))))?;
+        write_media(&data_dir, &db, &entry_id, raw)
+    })
+    .await
+    .map_err(|e| dto(AppError::Sync(format!("图片处理任务失败: {e}"))))?
 }
 
 #[tauri::command]
-pub fn list_media(app: AppHandle, db: State<Db>, entry_id: String) -> Result<Vec<MediaWithUrl>, AppErrorDto> {
+pub fn list_media(app: AppHandle, db: State<'_, std::sync::Arc<Db>>, entry_id: String) -> Result<Vec<MediaWithUrl>, AppErrorDto> {
     let data_dir = app_data_dir(&app)?;
     let media_dir = data_dir.join("media");
     let list = db.list_media(&entry_id).map_err(dto)?;
@@ -228,12 +236,12 @@ pub fn list_media(app: AppHandle, db: State<Db>, entry_id: String) -> Result<Vec
 }
 
 #[tauri::command]
-pub fn media_counts(db: State<Db>) -> Result<std::collections::HashMap<String, u32>, AppErrorDto> {
+pub fn media_counts(db: State<'_, std::sync::Arc<Db>>) -> Result<std::collections::HashMap<String, u32>, AppErrorDto> {
     db.media_counts_by_entry().map_err(dto)
 }
 
 #[tauri::command]
-pub fn delete_media(db: State<Db>, id: String) -> Result<(), AppErrorDto> {
+pub fn delete_media(db: State<'_, std::sync::Arc<Db>>, id: String) -> Result<(), AppErrorDto> {
     db.soft_delete_media(&id).map_err(dto)
 }
 
@@ -255,7 +263,7 @@ pub fn get_config_status(app: AppHandle) -> Result<ConfigStatus, AppErrorDto> {
 }
 
 #[tauri::command]
-pub fn cleanup_empty_drafts(db: State<Db>) -> Result<u32, AppErrorDto> {
+pub fn cleanup_empty_drafts(db: State<'_, std::sync::Arc<Db>>) -> Result<u32, AppErrorDto> {
     db.cleanup_empty_drafts().map_err(dto)
 }
 
@@ -297,7 +305,7 @@ mod tests {
         // 桌面路径：insert_media 读文件后调用 write_media
         let m1 = write_media(&dir, &db, "e1", png.clone()).unwrap();
 
-        // Android 路径：base64 传输后解码，调用同一个 write_media
+        // Android 路径：base64 传输后解码，调用同一�?write_media
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
         let decoded = base64::engine::general_purpose::STANDARD
@@ -349,3 +357,4 @@ mod tests {
         assert!(!all.contains("supersecret123"), "leaked secret: {all}");
     }
 }
+

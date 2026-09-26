@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from '$lib/stores.svelte';
   import { syncNow } from '$lib/api';
+  import { toast } from '$lib/toast.svelte';
 
   const labels: Record<string, string> = {
     idle: '未同步',
@@ -19,8 +20,10 @@
       await syncNow();
       store.syncStatus = 'ok';
       await store.loadEntries();
-    } catch {
+    } catch (e) {
       store.syncStatus = 'error';
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.show(`同步失败: ${msg}`);
     } finally {
       busy = false;
     }

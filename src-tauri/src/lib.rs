@@ -21,7 +21,7 @@ pub fn run() {
             use tauri::Manager;
             let data_dir = app.path().app_data_dir()?;
             let db = Db::open(&data_dir.join("diary.db")).map_err(std::io::Error::other)?;
-            app.manage(db);
+            app.manage(std::sync::Arc::new(db));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

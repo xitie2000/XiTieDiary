@@ -12,6 +12,7 @@
     listMedia,
     deleteMedia,
   } from '$lib/api';
+  import { toast } from '$lib/toast.svelte';
   import type { Entry, MediaWithUrl } from '$lib/types';
 
   interface Props {
@@ -59,10 +60,14 @@
 
   async function close() {
     clearTimeout(saveTimer);
-    if (content.trim() === '' && entry !== null && entry.content === '' && media.length === 0) {
-      await cleanupEmptyDrafts();
-    } else {
-      await doSave();
+    try {
+      if (content.trim() === '' && entry !== null && entry.content === '' && media.length === 0) {
+        await cleanupEmptyDrafts();
+      } else {
+        await doSave();
+      }
+    } catch (e) {
+      toast.show(`保存失败: ${errorMessage(e)}`);
     }
     onclose();
   }
@@ -70,7 +75,11 @@
   async function remove() {
     clearTimeout(saveTimer);
     dirty = false;
-    await deleteEntry(entryId);
+    try {
+      await deleteEntry(entryId);
+    } catch (e) {
+      toast.show(`删除失败: ${errorMessage(e)}`);
+    }
     onclose();
   }
 
@@ -79,18 +88,26 @@
       fileInput?.click();
       return;
     }
-    const picked = await openFileDialog({
-      multiple: true,
-      filters: [
-        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] },
-      ],
-    });
-    const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
-    if (paths.length === 0) return;
-    for (const p of paths) {
-      await insertMedia(entryId, p);
+    try {
+      const picked = await openFileDialog({
+        multiple: true,
+        filters: [
+          { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] },
+        ],
+      });
+      const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
+      if (paths.length === 0) return;
+      for (const p of paths) {
+        try {
+          await insertMedia(entryId, p);
+        } catch (e) {
+          toast.show(`图片插入失败: ${errorMessage(e)}`);
+        }
+      }
+      await loadMedia();
+    } catch (e) {
+      toast.show(`选图失败: ${errorMessage(e)}`);
     }
-    await loadMedia();
   }
 
   function fileToBase64(file: File): Promise<string> {
@@ -105,21 +122,38 @@
     });
   }
 
+  function errorMessage(e: unknown): string {
+    return e instanceof Error ? e.message : String(e);
+  }
+
   async function onFilesPicked(event: Event) {
     const input = event.target as HTMLInputElement;
     const files = input.files ? Array.from(input.files) : [];
     input.value = '';
     if (files.length === 0) return;
+    let failed = 0;
     for (const f of files) {
-      const b64 = await fileToBase64(f);
-      await insertMediaBytes(entryId, b64);
+      try {
+        const b64 = await fileToBase64(f);
+        await insertMediaBytes(entryId, b64);
+      } catch (e) {
+        failed += 1;
+        toast.show(`${f.name} 插入失败: ${errorMessage(e)}`);
+      }
     }
     await loadMedia();
+    if (failed > 0 && files.length > 1) {
+      toast.show(`${failed}/${files.length} 张图片未插入（格式不支持？）`);
+    }
   }
 
   async function removeMedia(id: string) {
-    await deleteMedia(id);
-    await loadMedia();
+    try {
+      await deleteMedia(id);
+      await loadMedia();
+    } catch (e) {
+      toast.show(`图片删除失败: ${errorMessage(e)}`);
+    }
   }
 </script>
 
