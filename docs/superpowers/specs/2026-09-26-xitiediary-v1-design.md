@@ -104,7 +104,7 @@ CREATE INDEX idx_media_entry  ON media(entry_id);
    - media：id 不可变，etag 不同 → 下载覆盖本地文件
    - 远端有而本地无 → 直接下载（新条目/新设备）
 3. **上行**：本地 `updated_at` > 远端已知值（或远端无）→ PUT；删除以墓碑形式 PUT（`deleted:true` 的 JSON）
-4. **删除传播**：设备拉到墓碑后本地执行软删
+4. **删除传播**：设备拉到墓碑后本地执行软删；孤儿媒体（不再被任何 entry JSON 引用的 media 记录）在下行应用后同步软删
 5. **冲突**：某条目本地已改 且 远端 etag 也变 → 保留 `updated_at` 新者；旧者复制为内容前缀 `[冲突]` 的新条目（新 UUID，仅本地，下次同步上行）——**不丢数据，多一个副本**
 6. **更新 manifest**：写回 `remote_state`，释放锁
 
