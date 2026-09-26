@@ -6,7 +6,11 @@ mod images;
 mod sync;
 mod types;
 
-use db::Db;
+pub use config::load_config;
+pub use db::Db;
+pub use sync::remote::Remote;
+pub use sync::run_sync;
+pub use types::{Entry, MediaMeta};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
