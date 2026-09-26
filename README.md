@@ -76,4 +76,4 @@ cargo test --manifest-path src-tauri/Cargo.toml --test oss_live -- --ignored  # 
 
 ## 许可证
 
-待定（计划 MIT）。
+[MIT](LICENSE)
