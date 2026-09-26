@@ -34,6 +34,8 @@ impl fmt::Display for ConfigError {
     }
 }
 
+impl std::error::Error for ConfigError {}
+
 fn env_override(field: &mut String, var: &str) {
     if let Ok(v) = std::env::var(var) {
         if !v.is_empty() {

@@ -15,6 +15,10 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+pub(crate) fn current_ms() -> i64 {
+    now_ms()
+}
+
 fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
         id: r.get(0)?,
@@ -220,6 +224,30 @@ impl Db {
         })
     }
 
+    pub fn soft_delete_media_for_entry(&self, entry_id: &str) -> rusqlite::Result<()> {
+        self.with_conn(|c| {
+            c.execute(
+                "UPDATE media SET deleted = 1, updated_at = ?2 WHERE entry_id = ?1",
+                params![entry_id, now_ms()],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn cleanup_empty_drafts(&self) -> rusqlite::Result<u32> {
+        self.with_conn(|c| {
+            let n = c.execute(
+                "DELETE FROM entries \
+                 WHERE deleted = 0 AND content = '' \
+                 AND id NOT IN (SELECT DISTINCT entry_id FROM media) \
+                 AND id NOT IN (SELECT substr(key, 9) FROM remote_state \
+                                WHERE key LIKE 'entries/%')",
+                [],
+            )?;
+            Ok(n as u32)
+        })
+    }
+
     pub fn link_media(&self, id: &str, entry_id: &str) -> rusqlite::Result<()> {
         self.with_conn(|c| {
             c.execute(
@@ -396,5 +424,41 @@ mod tests {
         let rs = db.get_remote_state("entries/x").unwrap().unwrap();
         assert_eq!(rs.etag.as_deref(), Some("def"));
         assert_eq!(db.list_remote_state().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn soft_delete_media_for_entry_marks_all() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_media(&media("m1", "e1")).unwrap();
+        db.insert_media(&media("m2", "e1")).unwrap();
+        db.insert_media(&media("m3", "e2")).unwrap();
+        db.soft_delete_media_for_entry("e1").unwrap();
+        let all = db.list_all_media().unwrap();
+        assert!(all.iter().find(|m| m.id == "m1").unwrap().deleted);
+        assert!(all.iter().find(|m| m.id == "m2").unwrap().deleted);
+        assert!(!all.iter().find(|m| m.id == "m3").unwrap().deleted);
+    }
+
+    #[test]
+    fn cleanup_empty_drafts_removes_only_empty_unsynced() {
+        let db = Db::open_in_memory().unwrap();
+        db.upsert_entry(&entry("empty", "2026-09-01", "")).unwrap();
+        db.upsert_entry(&entry("withtext", "2026-09-01", "hello")).unwrap();
+        db.upsert_entry(&entry("withmedia", "2026-09-01", "")).unwrap();
+        db.insert_media(&media("m1", "withmedia")).unwrap();
+        db.upsert_entry(&entry("synced", "2026-09-01", "")).unwrap();
+        db.set_remote_state(&RemoteState {
+            key: "entries/synced".into(),
+            etag: Some("abc".into()),
+            updated_at: Some(1),
+        })
+        .unwrap();
+
+        let removed = db.cleanup_empty_drafts().unwrap();
+        assert_eq!(removed, 1);
+        assert!(db.get_entry("empty").unwrap().is_none());
+        assert!(db.get_entry("withtext").unwrap().is_some());
+        assert!(db.get_entry("withmedia").unwrap().is_some());
+        assert!(db.get_entry("synced").unwrap().is_some());
     }
 }
