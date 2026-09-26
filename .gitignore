@@ -30,6 +30,9 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Android: jniLibs 是指向本地构建产物的符号链接，每次构建重新生成
+src-tauri/gen/android/app/src/main/jniLibs/
+
 # Symbolication related
 app.*.symbols
 
