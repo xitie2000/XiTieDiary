@@ -351,9 +351,11 @@ mod tests {
         save_config_to(&dir, content).unwrap();
         let written = std::fs::read_to_string(dir.join("local.json")).unwrap();
         assert_eq!(written, content);
-        // 写入后 load_config 应能直接加载（app_data 路径查找点）
-        let cfg = crate::config::load_config(Some(&dir.join("local.json")), None).unwrap();
+        // 文件可被反序列化为合法 SyncConfig（不经过 load_config 的环境变量覆盖路径，
+        // 避免与其它测试设置的 XITIEDIARY_* 环境变量产生并行竞争）
+        let cfg: crate::config::SyncConfig = serde_json::from_str(&written).unwrap();
         assert_eq!(cfg.bucket, "b");
+        assert_eq!(cfg.provider, "oss");
     }
 
     #[test]
