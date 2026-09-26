@@ -17,7 +17,7 @@
 | Windows | NSIS 安装包 | 2.55 MB |
 | Windows | MSI 安装包 | 3.55 MB |
 | Windows | 裸 exe | 7.41 MB |
-| Android | release APK（arm64） | 18.3 MB |
+| Android | release APK（arm64） | 18.4 MB |
 
 ## 同步原理
 
